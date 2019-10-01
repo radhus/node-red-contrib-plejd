@@ -450,12 +450,6 @@ module.exports = function(RED) {
       node.plejdConnection.subscribe(node.id, function(data) {
         var msg = {};
 
-        msg.payload = {
-          id: 11,
-          state: 'On',
-          dim: 255
-        };
-
         msg.payload = data;
 
         node.send(msg);
