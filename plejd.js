@@ -250,6 +250,15 @@ module.exports = function(RED) {
 
     this.startPing = function() {
       clearInterval(node.pingIndex);
+      node.debug("Starting ping");
+      node.plejdPing(function(pingOk) {
+        if (pingOk === false) {
+          node.disconnect(function() {
+            node.debug("Reconnecting due to initial ping failure");
+            node.connect();
+          });
+        }
+      });
       node.pingIndex = setInterval(function() {
         if (node.isConnected) {
           node.plejdPing(function(pingOk) {
