@@ -75,6 +75,10 @@ module.exports = function(RED) {
         node.address = reverseBuffer(Buffer.from(String(peripheral.address).replace(/\:/g, ''), 'hex'));
 
         peripheral.connect(function(err) {
+          if (err) {
+            node.error("Failed to connect to peripheral: " + err);
+            return
+          }
           node.debug('Connected to peripheral');
 
           peripheral.discoverSomeServicesAndCharacteristics([PLEJD_SERVICE], [], function(err, services, characteristics) {
