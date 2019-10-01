@@ -224,7 +224,7 @@ module.exports = function(RED) {
     this.disconnect = function(callback) {
       node.log('Disconnecting');
       clearInterval(node.pingIndex);
-      if (node.isConnected) {
+      if (node.isConnected || node.isConnecting) {
         node.plejdPeripheral.disconnect(function(err) {
           node.log('Disconnected');
           if (err) {
@@ -235,6 +235,7 @@ module.exports = function(RED) {
         node.log('Already disconnected');
       }
       node.isConnected = false;
+      node.isConnecting = false;
       node.plejdService = null;
       node.dataCharacteristic = null;
       node.lastDataCharacteristic = null;
