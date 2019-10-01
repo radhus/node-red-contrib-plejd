@@ -31,7 +31,6 @@ module.exports = function(RED) {
     node.address = null;
     node.plejdPeripheral = null;
     node.powerOn = false;
-    node.nodeIsClosing = false;
 
     node.subscriptions = {};
 
@@ -223,43 +222,28 @@ module.exports = function(RED) {
     };
 
     this.disconnect = function(callback) {
+      node.log('Disconnecting');
+      clearInterval(node.pingIndex);
       if (node.isConnected) {
-        node.log('Disconnecting');
-        node.nodeIsClosing = true;
-        clearInterval(node.pingIndex);
         node.plejdPeripheral.disconnect(function(err) {
+          node.log('Disconnected');
           if (err) {
             node.error(err);
           }
-          node.isConnected = false;
-          node.nodeIsClosing = false;
-          node.plejdService = null;
-          node.dataCharacteristic = null;
-          node.lastDataCharacteristic = null;
-          node.authCharacteristic = null;
-          node.pingCharacteristic = null;
-          node.address = null;
-          node.plejdPeripheral = null;
-          node.log('Disconnected');
-          if (callback) {
-            callback();
-          }
         });
       } else {
-        node.isConnected = false;
-        node.nodeIsClosing = false;
-        node.plejdService = null;
-        node.dataCharacteristic = null;
-        node.lastDataCharacteristic = null;
-        node.authCharacteristic = null;
-        node.pingCharacteristic = null;
-        node.address = null;
-        node.plejdPeripheral = null;
-        clearInterval(node.pingIndex);
         node.log('Already disconnected');
-        if (callback) {
-          callback();
-        }
+      }
+      node.isConnected = false;
+      node.plejdService = null;
+      node.dataCharacteristic = null;
+      node.lastDataCharacteristic = null;
+      node.authCharacteristic = null;
+      node.pingCharacteristic = null;
+      node.address = null;
+      node.plejdPeripheral = null;
+      if (callback) {
+        callback();
       }
     };
 
