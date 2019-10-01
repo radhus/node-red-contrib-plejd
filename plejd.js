@@ -279,6 +279,7 @@ module.exports = function(RED) {
 
     this.plejdPing = function(callback) {
       if (!node.pingCharacteristic) {
+        node.error('No ping characteristic set');
         return callback(false);
       }
 
@@ -286,11 +287,13 @@ module.exports = function(RED) {
 
       node.pingCharacteristic.write(ping, false, function(err) {
         if (err) {
+          node.error('Ping write failed: ' + err);
           return callback(false);
         }
 
         node.pingCharacteristic.read(function(err, pong) {
           if (err) {
+            node.error('Ping read failed: ' + err);
             return callback(false);
           }
 
