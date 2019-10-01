@@ -37,6 +37,7 @@ module.exports = function(RED) {
 
     node.connect = function(callback) {
       if (node.isConnecting || node.isConnected) {
+        node.error('Already connecting');
         if (callback) {
           return callback();
         } else {
@@ -265,12 +266,14 @@ module.exports = function(RED) {
           node.plejdPing(function(pingOk) {
             if (pingOk === false) {
               node.disconnect(function() {
+                node.debug("Reconnecting due to ping ping not ok");
                 node.connect();
               });
             }
           });
         } else {
           node.disconnect(function() {
+            node.debug("Reconnecting due to not connected during ping");
             node.connect();
           });
         }
