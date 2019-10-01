@@ -134,9 +134,9 @@ module.exports = function(RED) {
 
         peripheral.once('disconnect', function() {
           node.debug('Peripheral disconnected');
-          if (!node.nodeIsClosing) {
-            node.isConnected = false;
-          }
+          node.disconnect(function() {
+            node.connect();
+          })
         })
       });
 
