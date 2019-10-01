@@ -34,14 +34,10 @@ module.exports = function(RED) {
 
     node.subscriptions = {};
 
-    node.connect = function(callback) {
+    node.connect = function() {
       if (node.isConnecting || node.isConnected) {
         node.error('Already connecting');
-        if (callback) {
-          return callback();
-        } else {
-          return;
-        }
+        return;
       }
 
       node.debug('Start plejd connect');
@@ -118,10 +114,6 @@ module.exports = function(RED) {
 
                 node.startPing();
                 node.startListening();
-
-                if (callback) {
-                  callback();
-                }
               });
 
             } else {
@@ -182,15 +174,11 @@ module.exports = function(RED) {
       });
     };
 
-    this.register = function(nodeId, callback) {
+    this.register = function(nodeId) {
       node.subscriptions[nodeId] = function() {};
 
       if (Object.keys(node.subscriptions).length === 1) {
-        node.connect(callback);
-      } else {
-        if (callback) {
-          callback();
-        }
+        node.connect();
       }
     };
 
@@ -421,16 +409,13 @@ module.exports = function(RED) {
     this.plejdConnection = RED.nodes.getNode(config.plejd);
     var node = this;
 
-    node.plejdConnection.register(node.id, function() {
-      node.on('input', function(msg) {
+    node.plejdConnection.register(node.id);
+    node.on('input', function(msg) {
+      var id = msg.payload.id,
+          state = msg.payload.state || 'On',
+          dim = msg.payload.dim || 255;
 
-        var id = msg.payload.id,
-            state = msg.payload.state || 'On',
-            dim = msg.payload.dim || 255;
-
-        node.plejdConnection.setState(id, state, dim);
-
-      });
+      node.plejdConnection.setState(id, state, dim);
     });
 
     node.on('close', function(done) {
@@ -446,14 +431,13 @@ module.exports = function(RED) {
 
     var node = this;
 
-    node.plejdConnection.register(node.id, function() {
-      node.plejdConnection.subscribe(node.id, function(data) {
-        var msg = {};
+    node.plejdConnection.register(node.id);
+    node.plejdConnection.subscribe(node.id, function(data) {
+      var msg = {};
 
-        msg.payload = data;
+      msg.payload = data;
 
-        node.send(msg);
-      });
+      node.send(msg);
     });
 
     node.on('close', function(done) {
