@@ -47,91 +47,130 @@ module.exports = function(RED) {
       node.debug('Scanning... ' + noble.state);
       if (noble.state === 'poweredOn') {
         noble.startScanning([PLEJD_SERVICE], false);
+        setTimeout(this.handleNotYetConnected, 5000);
       } else {
         noble.on('stateChange', function(state) {
           if (state === 'poweredOn') {
             noble.startScanning([PLEJD_SERVICE], false);
+            setTimeout(this.handleNotYetConnected, 5000);
           }
         });
       }
 
-      noble.once('discover', function(peripheral) {
-        noble.stopScanning();
-
+      noble.on('discover', function(peripheral) {
         if (node.plejdPeripheral) {
           node.debug('Already got peripheral');
+          noble.stopScanning();
           return;
         }
 
         node.debug('found peripheral: ' + peripheral.address);
 
-        node.plejdPeripheral = peripheral;
 
         node.address = reverseBuffer(Buffer.from(String(peripheral.address).replace(/\:/g, ''), 'hex'));
 
         peripheral.connect(function(err) {
           if (err) {
-            node.error("Failed to connect to peripheral: " + err);
-            return
+            node.error(peripheral.address + " - Failed to connect to peripheral: " + err);
+            return;
           }
-          node.debug('Connected to peripheral');
+          node.debug(peripheral.address + ' - Connected to peripheral');
 
           peripheral.discoverSomeServicesAndCharacteristics([PLEJD_SERVICE], [], function(err, services, characteristics) {
             if (err || !services) {
                 node.isConnecting = false;
-                node.error('No service found', err);
+                node.error(peripheral.address + ' - No service found', err);
                 return;
             }
 
             service = services[0];
 
-            node.debug('found service: ' + service.uuid);
+            node.debug(peripheral.address + ' - found service: ' + service.uuid);
 
-            node.plejdService = service;
-
+            var dataCharacteristic = null;
+            var lastDataCharacteristic = null;
+            var authCharacteristic = null;
+            var pingCharacteristic = null;
             characteristics.forEach(function(characteristic) {
               if (DATA_UUID == characteristic.uuid) {
-                node.dataCharacteristic = characteristic;
+                dataCharacteristic = characteristic;
               } else if (LAST_DATA_UUID == characteristic.uuid) {
-                node.lastDataCharacteristic = characteristic;
+                lastDataCharacteristic = characteristic;
               } else if (AUTH_UUID == characteristic.uuid) {
-                node.authCharacteristic = characteristic;
+                authCharacteristic = characteristic;
               } else if (PING_UUID == characteristic.uuid) {
-                node.pingCharacteristic = characteristic;
+                pingCharacteristic = characteristic;
               }
             });
 
-            if (node.dataCharacteristic &&
-                node.lastDataCharacteristic &&
-                node.authCharacteristic &&
-                node.pingCharacteristic) {
+            if (dataCharacteristic &&
+                lastDataCharacteristic &&
+                authCharacteristic &&
+                pingCharacteristic) {
 
-              node.authenticate(function() {
-                node.isConnected = true;
-                node.isConnecting = false;
+              node.authenticate(authCharacteristic, function() {
+                node.plejdPing(pingCharacteristic, function(pingOk) {
+                  if (pingOk === false) {
+                    node.debug(peripheral.address + " - Initial ping failed, skipping peripheral");
+                    peripheral.disconnect();
+                    return;
+                  }
 
-                node.log('Plejd setup is complete');
+                  if (node.plejdPeripheral) {
+                    node.debug(peripheral.address + " - Already connected, skipping peripheral");
+                    peripheral.disconnect();
+                    return;
+                  }
 
-                node.startPing();
-                node.startListening();
+
+                  node.plejdPeripheral = peripheral;
+                  node.plejdService = service;
+
+                  node.isConnected = true;
+                  node.isConnecting = false;
+                  node.dataCharacteristic = dataCharacteristic;
+                  node.lastDataCharacteristic = lastDataCharacteristic;
+                  node.authCharacteristic = authCharacteristic;
+                  node.pingCharacteristic = pingCharacteristic;
+
+                  noble.stopScanning();
+
+                  node.log(peripheral.address + ' - Plejd connected');
+
+                  node.startPing();
+                  node.startListening();
+                });
               });
 
             } else {
-              node.isConnecting = false;
-              node.error('missing characteristics');
+              node.error(peripheral.address + ' - missing characteristics, skipping peripheral');
+              peripheral.disconnect();
+              return;
             }
           });
         });
 
         peripheral.once('disconnect', function() {
-          node.debug('Peripheral disconnected');
-          node.disconnect(function() {
-            node.connect();
-          })
+          node.debug(peripheral.address + ' - Peripheral disconnected');
+          if (peripheral.address === node.plejdPeripheral.address) {
+            node.disconnect(function() {
+              node.connect();
+            })
+          }
         })
       });
 
     };
+
+    this.handleNotYetConnected = function() {
+      if (!node.isConnected) {
+        node.info("Timeout trying to connect, restarting");
+        noble.stopScanning();
+        node.disconnect(function() {
+          node.connect();
+        });
+      }
+    }
 
     this.startListening = function() {
       node.lastDataCharacteristic.subscribe(function(err) {
@@ -239,17 +278,9 @@ module.exports = function(RED) {
     this.startPing = function() {
       clearInterval(node.pingIndex);
       node.debug("Starting ping");
-      node.plejdPing(function(pingOk) {
-        if (pingOk === false) {
-          node.disconnect(function() {
-            node.debug("Reconnecting due to initial ping failure");
-            node.connect();
-          });
-        }
-      });
       node.pingIndex = setInterval(function() {
         if (node.isConnected) {
-          node.plejdPing(function(pingOk) {
+          node.plejdPing(node.pingCharacteristic, function(pingOk) {
             if (pingOk === false) {
               node.disconnect(function() {
                 node.debug("Reconnecting due to ping ping not ok");
@@ -266,21 +297,21 @@ module.exports = function(RED) {
       }, 1000 * 60 * 3);
     };
 
-    this.plejdPing = function(callback) {
-      if (!node.pingCharacteristic) {
+    this.plejdPing = function(pingCharacteristic, callback) {
+      if (!pingCharacteristic) {
         node.error('No ping characteristic set');
         return callback(false);
       }
 
       var ping = crypto.randomBytes(1);
 
-      node.pingCharacteristic.write(ping, false, function(err) {
+      pingCharacteristic.write(ping, false, function(err) {
         if (err) {
           node.error('Ping write failed: ' + err);
           return callback(false);
         }
 
-        node.pingCharacteristic.read(function(err, pong) {
+        pingCharacteristic.read(function(err, pong) {
           if (err) {
             node.error('Ping read failed: ' + err);
             return callback(false);
@@ -363,13 +394,13 @@ module.exports = function(RED) {
       node.plejdWrite(node.dataCharacteristic, plejdEncDec(node.cryptoKey, node.address, payload))
     }
 
-    this.authenticate = function(callback) {
-        node.authCharacteristic.write(Buffer.from([0]), false, function(err) {
+    this.authenticate = function(authCharacteristic, callback) {
+        authCharacteristic.write(Buffer.from([0]), false, function(err) {
           if (err) {
             node.error(err);
             return;
           }
-          node.authCharacteristic.read(function(err, data) {
+          authCharacteristic.read(function(err, data) {
             if (err) {
               node.error(err);
               return;
@@ -377,7 +408,7 @@ module.exports = function(RED) {
 
             resp = plejdChalresp(node.cryptoKey, data);
 
-            node.authCharacteristic.write(resp, false, function(err) {
+            authCharacteristic.write(resp, false, function(err) {
               if (err) {
                 node.error(err);
                 return;
